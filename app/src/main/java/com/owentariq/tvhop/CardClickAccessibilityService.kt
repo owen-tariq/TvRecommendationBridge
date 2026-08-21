@@ -44,11 +44,17 @@ class CardClickAccessibilityService : AccessibilityService() {
         if (packageName !in WATCHED_PACKAGES) return
 
         when (event.eventType) {
-            AccessibilityEvent.TYPE_VIEW_SELECTED,
-            AccessibilityEvent.TYPE_VIEW_FOCUSED,
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> rememberFocus(event)
+            // Google TV's detail page is the authoritative source: by the time
+            // it's on screen, Google has already resolved which title you
+            // picked and rendered its name. Reading it beats guessing from the
+            // card, whose accessibility label is only layout scaffolding.
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ->
+                if (packageName == GOOGLE_TV_PACKAGE) readDetailPage() else rememberFocus(event)
 
-            AccessibilityEvent.TYPE_VIEW_CLICKED -> handleClick(event)
+            AccessibilityEvent.TYPE_VIEW_SELECTED,
+            AccessibilityEvent.TYPE_VIEW_FOCUSED -> rememberFocus(event)
+
+            AccessibilityEvent.TYPE_VIEW_CLICKED -> handleClick(event, packageName)
         }
     }
 
@@ -83,7 +89,31 @@ class CardClickAccessibilityService : AccessibilityService() {
         main.postDelayed(task, PREFETCH_DELAY_MS)
     }
 
-    private fun handleClick(event: AccessibilityEvent) {
+    /**
+     * The detail page has opened. Give it a moment to finish drawing, then
+     * read the title straight off it.
+     */
+    private fun readDetailPage() {
+        main.postDelayed({
+            val scan = DetailPageReader.read(rootInActiveWindow)
+            DebugLog.add("detail: ${scan.diagnostics}")
+            Log.d(TAG, "Detail page scan: ${scan.diagnostics}")
+
+            val card = scan.card ?: return@postDelayed
+            if (card.title == lastHandledTitle &&
+                SystemClock.elapsedRealtime() - lastHandledAt < DEBOUNCE_MS
+            ) return@postDelayed
+
+            lastHandledTitle = card.title
+            lastHandledAt = SystemClock.elapsedRealtime()
+
+            val target = Prefs.getTarget(this)
+            DebugLog.add("open:   \"${card.title}\" (from detail page) → $target")
+            worker.execute { handle(card, target) }
+        }, DETAIL_PAGE_SETTLE_MS)
+    }
+
+    private fun handleClick(event: AccessibilityEvent, packageName: String) {
         val candidates = candidatesOf(event)
         Log.d(TAG, "Click strings: " + candidates.filterNotNull().joinToString(" ⟪|⟫ "))
 
@@ -94,15 +124,18 @@ class CardClickAccessibilityService : AccessibilityService() {
             SystemClock.elapsedRealtime() - lastFocusedAt < FOCUS_TTL_MS
         }
 
-        // A press on a card usually carries nothing useful, and a press on a
-        // detail-page button carries the button's label. Either way the
-        // focused card is the better answer.
+        // On the home screen a press that carries no title is left alone: the
+        // detail page is about to open and will say authoritatively what was
+        // picked. Falling back to a remembered card here is what made the app
+        // appear stuck on one film — a stale memory got reused for every tap.
+        val onDetailPage = packageName == GOOGLE_TV_PACKAGE
         val card = when {
-            clicked == null -> focused
-            TitleExtractor.isAffordance(clicked.title) -> focused ?: clicked
-            else -> clicked
+            clicked != null && !TitleExtractor.isAffordance(clicked.title) -> clicked
+            onDetailPage -> focused
+            else -> null
         } ?: run {
-            Log.d(TAG, "Click with no usable title and no recent focus — ignoring")
+            Log.d(TAG, "Click carried no title; leaving it to the detail page")
+            DebugLog.add("click:  no title — waiting for the detail page")
             return
         }
 
@@ -215,8 +248,18 @@ class CardClickAccessibilityService : AccessibilityService() {
         private const val MAX_TREE_DEPTH = 4
         private const val MAX_TREE_NODES = 40
 
-        /** How long a remembered card stays valid after focus moved to it. */
-        private const val FOCUS_TTL_MS = 60_000L
+        /**
+         * How long a remembered card stays usable. This was 60s, which meant a
+         * card parsed a minute ago got reused for every later click — the app
+         * appeared to be "stuck" on one film. A press follows its own focus
+         * within a couple of seconds, so the window can be tight.
+         */
+        private const val FOCUS_TTL_MS = 6_000L
+
+        /** Let the detail page finish drawing before reading it. */
+        private const val DETAIL_PAGE_SETTLE_MS = 700L
+
+        private const val GOOGLE_TV_PACKAGE = "com.google.android.videos"
 
         /**
          * The TV launchers, plus Google TV's detail screen — which is where a
