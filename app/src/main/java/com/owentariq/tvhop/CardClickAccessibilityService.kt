@@ -31,38 +31,46 @@ class CardClickAccessibilityService : AccessibilityService() {
         val packageName = event.packageName?.toString() ?: return
         if (packageName !in LAUNCHER_PACKAGES) return
 
-        val candidates = ArrayList<CharSequence?>(event.text)
-        candidates.add(event.contentDescription)
-        // The clicked node itself often carries a cleaner label than the event.
-        // (Nodes are reclaimed by the framework; explicit recycle() is
-        // deprecated and a no-op on current releases.)
+        // Order matters: the node's own text is the card's label, while
+        // contentDescription is where launchers stuff synopses. TitleExtractor
+        // takes the first usable one, so the most trustworthy source goes
+        // first.
+        val candidates = ArrayList<CharSequence?>()
         event.source?.let { node ->
+            // (Nodes are reclaimed by the framework; explicit recycle() is
+            // deprecated and a no-op on current releases.)
             candidates.add(node.text)
-            candidates.add(node.contentDescription)
         }
+        candidates.addAll(event.text)
+        event.source?.let { node -> candidates.add(node.contentDescription) }
+        candidates.add(event.contentDescription)
 
-        val title = TitleExtractor.extract(candidates) ?: return
+        // Logged so a real device's label format can be inspected when a card
+        // resolves to the wrong title.
+        Log.d(TAG, "Raw card strings: " + candidates.filterNotNull().joinToString(" ⟪|⟫ "))
+
+        val card = TitleExtractor.extract(candidates) ?: return
 
         // The launcher can emit several events for one press.
         val now = SystemClock.elapsedRealtime()
-        if (title == lastTitle && now - lastHandledAt < DEBOUNCE_MS) return
-        lastTitle = title
+        if (card.title == lastTitle && now - lastHandledAt < DEBOUNCE_MS) return
+        lastTitle = card.title
         lastHandledAt = now
 
         val target = Prefs.getTarget(this)
-        Log.d(TAG, "Clicked \"$title\" -> $target")
-        worker.execute { handle(title, target) }
+        Log.d(TAG, "Clicked \"${card.title}\" year=${card.year} type=${card.typeHint} -> $target")
+        worker.execute { handle(card, target) }
     }
 
-    private fun handle(title: String, target: TargetApp) {
-        val meta = MetaResolver.resolve(title)
+    private fun handle(card: CardInfo, target: TargetApp) {
+        val meta = MetaResolver.resolve(card)
         if (meta == null) {
-            Log.i(TAG, "No match for \"$title\"")
-            toast(getString(R.string.toast_not_identified, title))
+            Log.i(TAG, "No confident match for \"${card.title}\"")
+            toast(getString(R.string.toast_not_identified, card.title))
             return
         }
 
-        Log.d(TAG, "Resolved \"$title\" -> ${meta.id} (${meta.type})")
+        Log.d(TAG, "Resolved \"${card.title}\" -> ${meta.id} (${meta.type})")
         when (val result = TargetLauncher.open(this, target, meta)) {
             is TargetLauncher.Result.Opened -> Unit
             is TargetLauncher.Result.TargetNotInstalled ->

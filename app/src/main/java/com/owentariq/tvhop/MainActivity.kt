@@ -78,7 +78,7 @@ class MainActivity : Activity() {
         val target = Prefs.getTarget(this)
 
         worker.execute {
-            val meta = MetaResolver.resolve(SELF_TEST_TITLE)
+            val meta = MetaResolver.resolve(SELF_TEST_CARD)
             runOnUiThread {
                 if (meta == null) {
                     testStatus.setText(R.string.test_lookup_failed)
@@ -118,6 +118,6 @@ class MainActivity : Activity() {
     }
 
     private companion object {
-        const val SELF_TEST_TITLE = "Dune: Part Two"
+        val SELF_TEST_CARD = CardInfo(title = "Dune: Part Two", year = 2024, typeHint = "movie")
     }
 }

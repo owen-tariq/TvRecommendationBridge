@@ -8,16 +8,17 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /** A resolved title: an IMDb-style id plus the content type it belongs to. */
-data class Meta(val id: String, val type: String, val name: String)
+data class Meta(val id: String, val type: String, val name: String, val year: Int? = null)
 
 /**
- * Resolves a card title to an IMDb id using Cinemeta, Stremio's public
- * metadata addon.
+ * Resolves a card to an IMDb id using Cinemeta, Stremio's public metadata
+ * addon — no API key, no account, and it returns IMDb ids natively, which is
+ * the id space both Stremio and Nuvio address content by.
  *
- * Cinemeta needs no API key and no account, which is the whole reason it's
- * used here instead of TMDB: the app works the moment it's installed, with
- * nothing for the user to sign up for. It also returns IMDb ids natively,
- * which is exactly the id space both Stremio and Nuvio address content by.
+ * Cinemeta's search is fuzzy and will happily return something for nearly any
+ * string, so the scoring below does the real work. Opening the wrong film is
+ * worse than opening nothing, so a candidate has to clear [MIN_SCORE] before
+ * we act on it.
  */
 object MetaResolver {
 
@@ -25,24 +26,91 @@ object MetaResolver {
     private const val BASE = "https://v3-cinemeta.strem.io/catalog"
     private const val TIMEOUT_MS = 8000
 
+    /**
+     * Below this, we'd rather tell the user we couldn't identify the card than
+     * open something unrelated. An exact title match alone scores 100.
+     */
+    private const val MIN_SCORE = 55
+
     private val cache = LruCache<String, Meta>(128)
 
     /** Blocking. Call from a background thread. */
-    fun resolve(rawTitle: String): Meta? {
-        val title = rawTitle.trim()
+    fun resolve(card: CardInfo): Meta? {
+        val title = card.title.trim()
         if (title.isEmpty()) return null
 
-        val key = normalize(title)
+        val key = "${normalize(title)}|${card.year ?: ""}|${card.typeHint ?: ""}"
         cache.get(key)?.let { return it }
 
-        val candidates = ArrayList<Meta>()
+        val candidates = ArrayList<Pair<Meta, Int>>()
         for (type in arrayOf("movie", "series")) {
-            candidates += search(type, title)
+            search(type, title).forEachIndexed { index, meta ->
+                candidates += meta to score(card, meta, index)
+            }
         }
 
-        val best = pickBest(title, candidates)
-        if (best != null) cache.put(key, best)
+        if (candidates.isEmpty()) {
+            Log.i(TAG, "No results at all for \"$title\"")
+            return null
+        }
+
+        val (best, bestScore) = candidates.maxByOrNull { it.second }!!
+        if (bestScore < MIN_SCORE) {
+            Log.i(
+                TAG,
+                "Best match for \"$title\" was \"${best.name}\" (${best.id}) scoring " +
+                    "$bestScore, below $MIN_SCORE — refusing to guess"
+            )
+            return null
+        }
+
+        Log.d(TAG, "Matched \"$title\" -> ${best.name} (${best.id}) score $bestScore")
+        cache.put(key, best)
         return best
+    }
+
+    /**
+     * Higher is better. An exact title match is worth 100 on its own; the year
+     * is the main tie-breaker between remakes and same-named titles.
+     */
+    private fun score(card: CardInfo, meta: Meta, resultIndex: Int): Int {
+        val target = normalize(card.title)
+        val name = normalize(meta.name)
+
+        var score = when {
+            name == target -> 100
+            name.startsWith(target) || target.startsWith(name) -> 55
+            name.contains(target) || target.contains(name) -> 35
+            else -> tokenOverlap(target, name)
+        }
+
+        // Year is the strongest disambiguator we have: it separates Dune (1984)
+        // from Dune (2021), and it's usually right there on the card.
+        if (card.year != null && meta.year != null) {
+            score += when {
+                card.year == meta.year -> 45
+                kotlin.math.abs(card.year - meta.year) == 1 -> 10 // release-date skew
+                else -> -40
+            }
+        }
+
+        if (card.typeHint != null) {
+            score += if (card.typeHint == meta.type) 20 else -20
+        }
+
+        // Mild preference for Cinemeta's own ranking, as a last tie-break.
+        score += (5 - resultIndex).coerceAtLeast(0)
+
+        return score
+    }
+
+    /** Fraction of the card's words present in the candidate, scaled to 0..40. */
+    private fun tokenOverlap(target: String, name: String): Int {
+        val targetWords = target.split(' ').filter { it.length > 2 }.toSet()
+        if (targetWords.isEmpty()) return 0
+        val nameWords = name.split(' ').toSet()
+        val hits = targetWords.count { it in nameWords }
+        return (40.0 * hits / targetWords.size).toInt()
     }
 
     private fun search(type: String, query: String): List<Meta> {
@@ -53,12 +121,15 @@ object MetaResolver {
             val metas = JSONObject(body).optJSONArray("metas") ?: return emptyList()
             (0 until metas.length()).mapNotNull { index ->
                 val item = metas.optJSONObject(index) ?: return@mapNotNull null
-                // Prefer the explicit imdb_id; fall back to id, which for
-                // Cinemeta is the same tt-style value.
                 val id = item.optString("imdb_id").ifBlank { item.optString("id") }
                 val name = item.optString("name")
                 if (id.isBlank() || name.isBlank()) return@mapNotNull null
-                Meta(id = id, type = item.optString("type").ifBlank { type }, name = name)
+                Meta(
+                    id = id,
+                    type = item.optString("type").ifBlank { type },
+                    name = name,
+                    year = parseYear(item)
+                )
             }
         } catch (e: Exception) {
             Log.w(TAG, "Could not parse $type results", e)
@@ -66,22 +137,17 @@ object MetaResolver {
         }
     }
 
-    /**
-     * Cinemeta is a fuzzy search, so the first hit isn't always the right one.
-     * Prefer an exact title match before falling back to search order.
-     */
-    private fun pickBest(query: String, candidates: List<Meta>): Meta? {
-        if (candidates.isEmpty()) return null
-        val target = normalize(query)
-
-        candidates.firstOrNull { normalize(it.name) == target }?.let { return it }
-        candidates.firstOrNull { normalize(it.name).startsWith(target) }?.let { return it }
-        return candidates.first()
+    /** `releaseInfo` is usually "2024", but for series it can be "2019-2023". */
+    private fun parseYear(item: JSONObject): Int? {
+        val raw = item.optString("year").ifBlank { item.optString("releaseInfo") }
+        return Regex("""(19|20)\d{2}""").find(raw)?.value?.toIntOrNull()
     }
 
     private fun normalize(value: String): String =
         value.lowercase()
-            .replace(Regex("""[^\p{L}\p{N} ]"""), "")
+            .replace('&', ' ')
+            .replace(Regex("""\b(the|a|an|el|la|los|las|un|una)\b"""), " ")
+            .replace(Regex("""[^\p{L}\p{N} ]"""), " ")
             .replace(Regex("""\s+"""), " ")
             .trim()
 
