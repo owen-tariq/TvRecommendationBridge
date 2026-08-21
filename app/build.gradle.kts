@@ -47,8 +47,32 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            if (signingValue("storeFile", "TVHOP_STORE_FILE") != null) {
+
+            val hasKey = signingValue("storeFile", "TVHOP_STORE_FILE") != null
+            if (hasKey) {
                 signingConfig = signingConfigs.getByName("release")
+            } else if (System.getenv("CI") == "true") {
+                // An unsigned APK cannot be installed — Android rejects it with
+                // INSTALL_PARSE_FAILED_NO_CERTIFICATES. Publishing one from CI
+                // is worse than failing, because the build goes green and the
+                // broken APK reaches the release page looking fine. So: fail
+                // loudly here instead.
+                throw GradleException(
+                    """
+                    Refusing to build an unsigned release in CI.
+
+                    Add these repository secrets (Settings → Secrets and
+                    variables → Actions), then re-run:
+
+                      KEYSTORE_BASE64     base64 of the release keystore
+                      KEYSTORE_PASSWORD   the store password
+                      KEY_ALIAS           tvhop
+                      KEY_PASSWORD        the key password
+
+                    Local builds without a key are still fine; this check only
+                    applies when CI=true.
+                    """.trimIndent()
+                )
             }
         }
     }
