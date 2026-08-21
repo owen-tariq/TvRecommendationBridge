@@ -9,3 +9,7 @@
 /captures
 .externalNativeBuild
 .cxx
+*.jks
+keystore.properties
+/signing/
+release.jks
