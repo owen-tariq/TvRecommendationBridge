@@ -29,4 +29,10 @@
     <string name="toast_open_failed">Couldn\'t open it: %1$s</string>
 
     <string name="credits">Title data from Cinemeta. TvHop is an independent tool and is not affiliated with Google, Nuvio, or Stremio.</string>
+
+    <string name="step_debug">4. What TvHop saw</string>
+    <string name="debug_hint">The most recent cards the service picked up, and what it matched them to. Read these out if something opens the wrong title.</string>
+    <string name="debug_empty">Nothing yet. Go to the home screen, move over a few cards, then come back and refresh.</string>
+    <string name="refresh_log">Refresh</string>
+    <string name="clear_log">Clear</string>
 </resources>

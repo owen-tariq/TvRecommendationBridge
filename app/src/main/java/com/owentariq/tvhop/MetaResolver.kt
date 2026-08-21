@@ -24,7 +24,16 @@ object MetaResolver {
 
     private const val TAG = "MetaResolver"
     private const val BASE = "https://v3-cinemeta.strem.io/catalog"
-    private const val TIMEOUT_MS = 8000
+
+    /**
+     * 8s was far too patient for something sitting between a button press and
+     * a screen opening. A lookup that hasn't answered in 4s isn't going to
+     * feel responsive anyway.
+     */
+    private const val TIMEOUT_MS = 4000
+
+    /** The movie and series catalogues are queried at the same time, not in turn. */
+    private val searchPool = java.util.concurrent.Executors.newFixedThreadPool(2)
 
     /**
      * Below this, we'd rather tell the user we couldn't identify the card than
@@ -40,31 +49,62 @@ object MetaResolver {
         if (title.isEmpty()) return null
 
         val key = "${normalize(title)}|${card.year ?: ""}|${card.typeHint ?: ""}"
-        cache.get(key)?.let { return it }
+        cache.get(key)?.let {
+            Log.d(TAG, "Cache hit for \"$title\" -> ${it.id}")
+            return it
+        }
+
+        // Both catalogues at once — sequential lookups doubled the wait for
+        // every card.
+        val started = System.currentTimeMillis()
+        val futures = arrayOf("movie", "series").map { type ->
+            type to searchPool.submit<List<Meta>> { search(type, title) }
+        }
 
         val candidates = ArrayList<Pair<Meta, Int>>()
-        for (type in arrayOf("movie", "series")) {
-            search(type, title).forEachIndexed { index, meta ->
+        for ((_, future) in futures) {
+            val results = try {
+                future.get()
+            } catch (e: Exception) {
+                Log.w(TAG, "Search failed", e)
+                emptyList()
+            }
+            results.forEachIndexed { index, meta ->
                 candidates += meta to score(card, meta, index)
             }
         }
+        val elapsed = System.currentTimeMillis() - started
 
         if (candidates.isEmpty()) {
             Log.i(TAG, "No results at all for \"$title\"")
+            DebugLog.add("✗ \"$title\" — no results (${elapsed}ms)")
             return null
         }
 
-        val (best, bestScore) = candidates.maxByOrNull { it.second }!!
+        val ranked = candidates.sortedByDescending { it.second }
+        val (best, bestScore) = ranked.first()
+        val runnerUp = ranked.getOrNull(1)
+
         if (bestScore < MIN_SCORE) {
             Log.i(
                 TAG,
                 "Best match for \"$title\" was \"${best.name}\" (${best.id}) scoring " +
                     "$bestScore, below $MIN_SCORE — refusing to guess"
             )
+            DebugLog.add(
+                "✗ \"$title\" — best was \"${best.name}\" (${best.year ?: "?"}) " +
+                    "score $bestScore < $MIN_SCORE, not opening"
+            )
             return null
         }
 
-        Log.d(TAG, "Matched \"$title\" -> ${best.name} (${best.id}) score $bestScore")
+        Log.d(TAG, "Matched \"$title\" -> ${best.name} (${best.id}) score $bestScore in ${elapsed}ms")
+        DebugLog.add(
+            "✓ \"$title\" → ${best.name} (${best.year ?: "?"}) ${best.id} " +
+                "score $bestScore" +
+                (runnerUp?.let { ", 2nd: ${it.first.name} ${it.second}" } ?: "") +
+                " [${elapsed}ms]"
+        )
         cache.put(key, best)
         return best
     }

@@ -22,6 +22,7 @@ class MainActivity : Activity() {
 
     private lateinit var serviceStatus: TextView
     private lateinit var testStatus: TextView
+    private lateinit var debugOutput: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -43,11 +44,29 @@ class MainActivity : Activity() {
         }
 
         findViewById<Button>(R.id.button_test).setOnClickListener { runSelfTest() }
+
+        debugOutput = findViewById(R.id.debug_output)
+        findViewById<Button>(R.id.button_refresh_log).setOnClickListener { refreshDebugLog() }
+        findViewById<Button>(R.id.button_clear_log).setOnClickListener {
+            DebugLog.clear()
+            refreshDebugLog()
+        }
     }
 
     override fun onResume() {
         super.onResume()
         refreshServiceStatus()
+        refreshDebugLog()
+    }
+
+    /** Renders the service's recent activity so problems can be read off the TV. */
+    private fun refreshDebugLog() {
+        val lines = DebugLog.recent(12)
+        if (lines.isEmpty()) {
+            debugOutput.setText(R.string.debug_empty)
+        } else {
+            debugOutput.text = lines.joinToString("\n\n")
+        }
     }
 
     private fun setupTargetSelector() {

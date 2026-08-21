@@ -52,17 +52,42 @@ class CardClickAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** Cheap: parse and store, never resolve. */
+    private var prefetch: Runnable? = null
+
     private fun rememberFocus(event: AccessibilityEvent) {
-        val card = TitleExtractor.extract(candidatesOf(event)) ?: return
+        val candidates = candidatesOf(event)
+        val card = TitleExtractor.extract(candidates) ?: return
+        if (card.title == lastFocused?.title) return
+
         lastFocused = card
         lastFocusedAt = SystemClock.elapsedRealtime()
         Log.v(TAG, "Focus on \"${card.title}\" (${card.year ?: "no year"})")
+        DebugLog.add(
+            "focus: \"${card.title}\"" +
+                (card.year?.let { " ($it)" } ?: "") +
+                (card.typeHint?.let { " [$it]" } ?: "") +
+                "  ⟨raw: ${candidates.filterNotNull().joinToString(" | ").take(160)}⟩"
+        )
+
+        // Resolve ahead of the press. Cards you skim past are debounced away;
+        // anything you pause on is already looked up and cached by the time
+        // you hit select, so opening feels instant instead of waiting on the
+        // network mid-press.
+        prefetch?.let { main.removeCallbacks(it) }
+        val task = Runnable {
+            worker.execute {
+                if (lastFocused?.title == card.title) MetaResolver.resolve(card)
+            }
+        }
+        prefetch = task
+        main.postDelayed(task, PREFETCH_DELAY_MS)
     }
 
     private fun handleClick(event: AccessibilityEvent) {
         val candidates = candidatesOf(event)
         Log.d(TAG, "Click strings: " + candidates.filterNotNull().joinToString(" ⟪|⟫ "))
+
+        DebugLog.add("click:  ⟨raw: " + candidates.filterNotNull().joinToString(" | ").take(160) + "⟩")
 
         val clicked = TitleExtractor.extract(candidates)
         val focused = lastFocused.takeIf {
@@ -89,6 +114,7 @@ class CardClickAccessibilityService : AccessibilityService() {
 
         val target = Prefs.getTarget(this)
         Log.d(TAG, "Opening \"${card.title}\" year=${card.year} type=${card.typeHint} -> $target")
+        DebugLog.add("open:   using \"${card.title}\" → $target")
         worker.execute { handle(card, target) }
     }
 
@@ -136,6 +162,13 @@ class CardClickAccessibilityService : AccessibilityService() {
     companion object {
         private const val TAG = "TvHopService"
         private const val DEBOUNCE_MS = 2500L
+
+        /**
+         * How long focus must settle on a card before it's looked up. Long
+         * enough that scrolling a row doesn't fire a request per card, short
+         * enough that the answer is ready before a deliberate press.
+         */
+        private const val PREFETCH_DELAY_MS = 450L
 
         /** How long a remembered card stays valid after focus moved to it. */
         private const val FOCUS_TTL_MS = 60_000L
