@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TvHop</string>
+    <string name="subtitle">Abre las recomendaciones del launcher en la app donde realmente ves las cosas</string>
+
+    <string name="accessibility_description">Detecta cuando pulsas una tarjeta de película o serie en el launcher del televisor y abre ese título en Nuvio o Stremio.</string>
+
+    <string name="step_target">1. Abrir los títulos en</string>
+    <string name="target_nuvio">Nuvio</string>
+    <string name="target_stremio">Stremio</string>
+
+    <string name="step_service">2. Activa el servicio</string>
+    <string name="service_on">El servicio está activo — pulsa cualquier recomendación de la pantalla de inicio.</string>
+    <string name="service_off">El servicio está desactivado. Actívalo en Accesibilidad.</string>
+    <string name="open_accessibility">Abrir ajustes de Accesibilidad</string>
+    <string name="accessibility_unavailable">No se pudieron abrir los ajustes de Accesibilidad en este dispositivo. Ábrelos manualmente y busca TvHop dentro de Accesibilidad.</string>
+
+    <string name="step_test">3. Comprueba que funciona</string>
+    <string name="test_idle">Hace una búsqueda y abre el resultado, para probarlo sin salir de esta pantalla.</string>
+    <string name="test_running">Buscando…</string>
+    <string name="test_opened">Se abrió %1$s (%2$s).</string>
+    <string name="test_lookup_failed">Falló la búsqueda — revisa la conexión a internet del televisor.</string>
+    <string name="test_target_missing">%1$s no está instalado en este dispositivo.</string>
+    <string name="test_failed">No se pudo abrir: %1$s</string>
+    <string name="run_test">Probar</string>
+
+    <string name="toast_not_identified">No se pudo identificar \"%1$s\"</string>
+    <string name="toast_target_missing">%1$s no está instalado</string>
+    <string name="toast_open_failed">No se pudo abrir: %1$s</string>
+
+    <string name="credits">Datos de títulos de Cinemeta. TvHop es una herramienta independiente y no está afiliada a Google, Nuvio ni Stremio.</string>
+</resources>

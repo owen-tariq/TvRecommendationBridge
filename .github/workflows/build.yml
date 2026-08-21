@@ -1,0 +1,81 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # The Gradle wrapper jar is not committed, so Gradle is installed here.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      # Restore the signing key from repository secrets.
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > release.jks
+            {
+              echo "TVHOP_STORE_FILE=$GITHUB_WORKSPACE/release.jks"
+              echo "TVHOP_STORE_PASSWORD=$KEYSTORE_PASSWORD"
+              echo "TVHOP_KEY_ALIAS=$KEY_ALIAS"
+              echo "TVHOP_KEY_PASSWORD=$KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+          fi
+
+      - name: Build release APK
+        run: gradle --no-daemon assembleRelease
+
+      - name: Stage APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/*.apk dist/TvHop.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TvHop-apk
+          path: dist/TvHop.apk
+
+      # Every green build on main refreshes a single "latest" release, so the
+      # download link in the README never goes stale.
+      - name: Publish latest build
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build
+          files: dist/TvHop.apk
+
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/TvHop.apk
+          generate_release_notes: true

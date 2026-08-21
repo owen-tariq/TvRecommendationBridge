@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TvHop</string>
+    <string name="subtitle">Open launcher recommendations in the app you actually watch in</string>
+
+    <string name="accessibility_description">Detects when you click a movie or show card on the TV launcher and opens that title in Nuvio or Stremio.</string>
+
+    <string name="step_target">1. Open titles in</string>
+    <string name="target_nuvio">Nuvio</string>
+    <string name="target_stremio">Stremio</string>
+
+    <string name="step_service">2. Turn on the service</string>
+    <string name="service_on">Service is on — click any recommendation on the home screen.</string>
+    <string name="service_off">Service is off. Turn it on under Accessibility.</string>
+    <string name="open_accessibility">Open Accessibility settings</string>
+    <string name="accessibility_unavailable">Couldn\'t open Accessibility settings on this device. Open Settings manually and look for TvHop under Accessibility.</string>
+
+    <string name="step_test">3. Check it works</string>
+    <string name="test_idle">Runs a lookup and opens the result, so you can test without leaving this screen.</string>
+    <string name="test_running">Looking up…</string>
+    <string name="test_opened">Opened %1$s (%2$s).</string>
+    <string name="test_lookup_failed">Lookup failed — check the TV\'s internet connection.</string>
+    <string name="test_target_missing">%1$s isn\'t installed on this device.</string>
+    <string name="test_failed">Couldn\'t open it: %1$s</string>
+    <string name="run_test">Run test</string>
+
+    <string name="toast_not_identified">Couldn\'t identify \"%1$s\"</string>
+    <string name="toast_target_missing">%1$s isn\'t installed</string>
+    <string name="toast_open_failed">Couldn\'t open it: %1$s</string>
+
+    <string name="credits">Title data from Cinemeta. TvHop is an independent tool and is not affiliated with Google, Nuvio, or Stremio.</string>
+</resources>

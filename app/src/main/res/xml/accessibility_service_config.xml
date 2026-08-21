@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Scoped as tightly as the framework allows: click events only, and only
+    from the TV launcher packages. The service never sees input in any other
+    app on the device.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeViewClicked"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/accessibility_description"
+    android:notificationTimeout="0"
+    android:packageNames="com.google.android.apps.tv.launcherx,com.google.android.tvlauncher,com.google.android.apps.tv.launcher"
+    android:settingsActivity="com.owentariq.tvhop.MainActivity" />
