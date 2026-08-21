@@ -35,7 +35,27 @@ object DetailPageReader {
     private val SERIES_WORD = Regex("""\b(tv show|series|serie|season|temporada)\b""", RegexOption.IGNORE_CASE)
     private val MOVIE_WORD = Regex("""\b(movie|film|pel[íi]cula)\b""", RegexOption.IGNORE_CASE)
 
-    data class Scan(val card: CardInfo?, val diagnostics: String)
+    data class Scan(
+        val card: CardInfo?,
+        val diagnostics: String,
+        /** True when this window really is one title's detail page. */
+        val isDetailPage: Boolean = false
+    )
+
+    /**
+     * Markers that a window is a detail page rather than a browse screen.
+     *
+     * This gate matters. A detail page and the home screen both arrive as
+     * window changes, and scanning the home screen would pick whatever title
+     * happened to be sitting on it and open that. What makes a detail page
+     * distinctive is that it offers actions for one specific title.
+     */
+    private val DETAIL_MARKERS = Regex(
+        "\\b(watch trailer|play trailer|buy or rent|buy|rent|subscribe|" +
+            "add to watchlist|watchlist|episodes|free with ads|resume|" +
+            "comprar|alquilar|ver tr[áa]iler|temporadas?)\\b",
+        RegexOption.IGNORE_CASE
+    )
 
     /**
      * @param root the detail page's root node, from `rootInActiveWindow`.
@@ -49,12 +69,20 @@ object DetailPageReader {
 
         val allText = nodes.joinToString(" ") { it.second }
 
+        // Only act on a page offering actions for one specific title. A
+        // buy-only film still qualifies — "Buy" and "Rent" are markers too,
+        // which is what previously made those titles do nothing at all.
+        if (!DETAIL_MARKERS.containsMatchIn(allText)) {
+            return Scan(null, "not a detail page (no play/buy/episodes actions)", false)
+        }
+
         val title = byTitleViewId(nodes) ?: firstPlausibleText(nodes)
         if (title == null) {
             return Scan(
                 null,
-                "no title found in ${nodes.size} nodes: " +
-                    nodes.take(6).joinToString(" | ") { "${shortId(it.first)}=${it.second.take(28)}" }
+                "detail page, but no title among ${nodes.size} nodes: " +
+                    nodes.take(8).joinToString(" | ") { "${shortId(it.first)}=${it.second.take(24)}" },
+                true
             )
         }
 
@@ -68,7 +96,8 @@ object DetailPageReader {
         return Scan(
             CardInfo(title = title, year = year, typeHint = typeHint),
             "detail page: \"$title\"" + (year?.let { " ($it)" } ?: "") +
-                (typeHint?.let { " [$it]" } ?: "")
+                (typeHint?.let { " [$it]" } ?: ""),
+            true
         )
     }
 

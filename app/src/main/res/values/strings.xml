@@ -35,4 +35,6 @@
     <string name="debug_empty">Nothing yet. Go to the home screen, move over a few cards, then come back and refresh.</string>
     <string name="refresh_log">Refresh</string>
     <string name="clear_log">Clear</string>
+    <string name="toast_looking_up">Found “%1$s” — looking it up…</string>
+    <string name="toast_opening">Opening %1$s in %2$s</string>
 </resources>

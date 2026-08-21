@@ -48,8 +48,14 @@ class CardClickAccessibilityService : AccessibilityService() {
             // it's on screen, Google has already resolved which title you
             // picked and rendered its name. Reading it beats guessing from the
             // card, whose accessibility label is only layout scaffolding.
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ->
-                if (packageName == GOOGLE_TV_PACKAGE) readDetailPage() else rememberFocus(event)
+            // Any window change might be a detail page opening. Which package
+            // hosts it varies — Google TV for most titles, other surfaces for
+            // buy-only ones — so the reader decides by looking at the page
+            // itself rather than trusting the package name.
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                rememberFocus(event)
+                scanForDetailPage()
+            }
 
             AccessibilityEvent.TYPE_VIEW_SELECTED,
             AccessibilityEvent.TYPE_VIEW_FOCUSED -> rememberFocus(event)
@@ -89,28 +95,55 @@ class CardClickAccessibilityService : AccessibilityService() {
         main.postDelayed(task, PREFETCH_DELAY_MS)
     }
 
+    private val pendingScans = ArrayList<Runnable>()
+
     /**
-     * The detail page has opened. Give it a moment to finish drawing, then
-     * read the title straight off it.
+     * A window opened. It may be a detail page, and it may still be drawing —
+     * artwork and buttons often land after the first frame — so it's checked a
+     * few times and the first confident read wins.
+     *
+     * When it succeeds the hand-off happens on its own; no second press.
      */
-    private fun readDetailPage() {
-        main.postDelayed({
-            val scan = DetailPageReader.read(rootInActiveWindow)
-            DebugLog.add("detail: ${scan.diagnostics}")
-            Log.d(TAG, "Detail page scan: ${scan.diagnostics}")
+    private fun scanForDetailPage() {
+        pendingScans.forEach { main.removeCallbacks(it) }
+        pendingScans.clear()
 
-            val card = scan.card ?: return@postDelayed
-            if (card.title == lastHandledTitle &&
-                SystemClock.elapsedRealtime() - lastHandledAt < DEBOUNCE_MS
-            ) return@postDelayed
+        for (delay in SCAN_DELAYS_MS) {
+            val task = Runnable { attemptDetailScan() }
+            pendingScans.add(task)
+            main.postDelayed(task, delay)
+        }
+    }
 
-            lastHandledTitle = card.title
-            lastHandledAt = SystemClock.elapsedRealtime()
+    private fun attemptDetailScan() {
+        val scan = DetailPageReader.read(rootInActiveWindow)
+        val card = scan.card
+        if (card == null) {
+            // Only worth reporting once the page claimed to be a detail page;
+            // otherwise every home-screen redraw would spam the log.
+            if (scan.isDetailPage) {
+                DebugLog.add("detail: ${scan.diagnostics}")
+                Log.d(TAG, scan.diagnostics)
+            }
+            return
+        }
 
-            val target = Prefs.getTarget(this)
-            DebugLog.add("open:   \"${card.title}\" (from detail page) → $target")
-            worker.execute { handle(card, target) }
-        }, DETAIL_PAGE_SETTLE_MS)
+        if (card.title == lastHandledTitle &&
+            SystemClock.elapsedRealtime() - lastHandledAt < DEBOUNCE_MS
+        ) return
+
+        // Found it — cancel the remaining retries.
+        pendingScans.forEach { main.removeCallbacks(it) }
+        pendingScans.clear()
+
+        lastHandledTitle = card.title
+        lastHandledAt = SystemClock.elapsedRealtime()
+
+        DebugLog.add("detail: ${scan.diagnostics}")
+        val target = Prefs.getTarget(this)
+        DebugLog.add("open:   \"${card.title}\" (auto, from detail page) → $target")
+        Log.d(TAG, "Auto-opening \"${card.title}\" from detail page -> $target")
+        worker.execute { handle(card, target) }
     }
 
     private fun handleClick(event: AccessibilityEvent, packageName: String) {
@@ -205,6 +238,17 @@ class CardClickAccessibilityService : AccessibilityService() {
     }
 
     private fun handle(card: CardInfo, target: TargetApp) {
+        val targetName = getString(
+            if (target == TargetApp.STREMIO) R.string.target_stremio else R.string.target_nuvio
+        )
+
+        // Say what's happening. Without this the TV just sits there for a
+        // moment and it's impossible to tell whether anything was detected.
+        // Skipped when the answer is already cached, since there's no wait.
+        if (!MetaResolver.isCached(card)) {
+            toast(getString(R.string.toast_looking_up, card.title))
+        }
+
         val meta = MetaResolver.resolve(card)
         if (meta == null) {
             Log.i(TAG, "No confident match for \"${card.title}\"")
@@ -214,7 +258,12 @@ class CardClickAccessibilityService : AccessibilityService() {
 
         Log.d(TAG, "Resolved \"${card.title}\" -> ${meta.id} (${meta.type})")
         when (val result = TargetLauncher.open(this, target, meta)) {
-            is TargetLauncher.Result.Opened -> Unit
+            is TargetLauncher.Result.Opened -> {
+                // Name the match, with its year, so a wrong pick is obvious
+                // immediately rather than after the wrong page loads.
+                val matched = meta.name + (meta.year?.let { " ($it)" } ?: "")
+                toast(getString(R.string.toast_opening, matched, targetName))
+            }
             is TargetLauncher.Result.TargetNotInstalled ->
                 toast(getString(R.string.toast_target_missing, target.name.lowercase()))
             is TargetLauncher.Result.Failed ->
@@ -256,8 +305,12 @@ class CardClickAccessibilityService : AccessibilityService() {
          */
         private const val FOCUS_TTL_MS = 6_000L
 
-        /** Let the detail page finish drawing before reading it. */
-        private const val DETAIL_PAGE_SETTLE_MS = 700L
+        /**
+         * When to look at a newly opened window. Several attempts, because a
+         * detail page's buttons and title don't all arrive in the first frame
+         * — especially buy-only titles, whose purchase actions load late.
+         */
+        private val SCAN_DELAYS_MS = longArrayOf(700L, 1500L, 2600L)
 
         private const val GOOGLE_TV_PACKAGE = "com.google.android.videos"
 

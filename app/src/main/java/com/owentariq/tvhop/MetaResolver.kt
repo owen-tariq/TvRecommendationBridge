@@ -43,12 +43,18 @@ object MetaResolver {
 
     private val cache = LruCache<String, Meta>(128)
 
+    /** True if this card was already resolved, so opening will be instant. */
+    fun isCached(card: CardInfo): Boolean = cache.get(cacheKey(card)) != null
+
+    private fun cacheKey(card: CardInfo): String =
+        "${normalize(card.title)}|${card.year ?: ""}|${card.typeHint ?: ""}"
+
     /** Blocking. Call from a background thread. */
     fun resolve(card: CardInfo): Meta? {
         val title = card.title.trim()
         if (title.isEmpty()) return null
 
-        val key = "${normalize(title)}|${card.year ?: ""}|${card.typeHint ?: ""}"
+        val key = cacheKey(card)
         cache.get(key)?.let {
             Log.d(TAG, "Cache hit for \"$title\" -> ${it.id}")
             return it

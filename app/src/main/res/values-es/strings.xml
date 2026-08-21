@@ -35,4 +35,6 @@
     <string name="debug_empty">Nada todavía. Ve a la pantalla de inicio, pasa por encima de varias tarjetas y vuelve a actualizar.</string>
     <string name="refresh_log">Actualizar</string>
     <string name="clear_log">Borrar</string>
+    <string name="toast_looking_up">Detectado “%1$s” — buscando…</string>
+    <string name="toast_opening">Abriendo %1$s en %2$s</string>
 </resources>
