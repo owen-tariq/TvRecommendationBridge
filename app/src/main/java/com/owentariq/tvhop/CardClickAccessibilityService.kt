@@ -38,6 +38,21 @@ class CardClickAccessibilityService : AccessibilityService() {
     @Volatile private var lastHandledTitle: String? = null
     @Volatile private var lastHandledAt = 0L
 
+    /**
+     * A title already handed off, which must not fire again.
+     *
+     * Without this the app traps you: opening Nuvio and pressing Back returns
+     * you to the same Google TV detail page, that arrives as a fresh window,
+     * and it opens Nuvio again. A short debounce can't fix it — the round trip
+     * takes longer than any sensible debounce.
+     *
+     * It's cleared when you click something on the home screen, which is the
+     * signal that you've chosen something new. Coming back from Nuvio involves
+     * no such click, so the loop stays broken while a deliberate second choice
+     * still works.
+     */
+    @Volatile private var alreadyOpenedTitle: String? = null
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         val packageName = event.packageName?.toString() ?: return
@@ -60,7 +75,15 @@ class CardClickAccessibilityService : AccessibilityService() {
             AccessibilityEvent.TYPE_VIEW_SELECTED,
             AccessibilityEvent.TYPE_VIEW_FOCUSED -> rememberFocus(event)
 
-            AccessibilityEvent.TYPE_VIEW_CLICKED -> handleClick(event, packageName)
+            AccessibilityEvent.TYPE_VIEW_CLICKED -> {
+                // A click on the launcher means a fresh choice, so allow the
+                // previously opened title to fire again.
+                if (packageName != GOOGLE_TV_PACKAGE && alreadyOpenedTitle != null) {
+                    Log.d(TAG, "Launcher click — re-arming after \"$alreadyOpenedTitle\"")
+                    alreadyOpenedTitle = null
+                }
+                handleClick(event, packageName)
+            }
         }
     }
 
@@ -132,17 +155,33 @@ class CardClickAccessibilityService : AccessibilityService() {
             SystemClock.elapsedRealtime() - lastHandledAt < DEBOUNCE_MS
         ) return
 
+        // Back out of Nuvio and you land on this same page again. Don't
+        // bounce the user straight back out of it.
+        if (card.title == alreadyOpenedTitle) {
+            Log.d(TAG, "\"${card.title}\" was already opened; not re-opening")
+            return
+        }
+
         // Found it — cancel the remaining retries.
         pendingScans.forEach { main.removeCallbacks(it) }
         pendingScans.clear()
 
         lastHandledTitle = card.title
         lastHandledAt = SystemClock.elapsedRealtime()
+        alreadyOpenedTitle = card.title
 
         DebugLog.add("detail: ${scan.diagnostics}")
         val target = Prefs.getTarget(this)
         DebugLog.add("open:   \"${card.title}\" (auto, from detail page) → $target")
         Log.d(TAG, "Auto-opening \"${card.title}\" from detail page -> $target")
+
+        // Announce the moment of detection, while Google TV is still on
+        // screen. This used to be skipped whenever the title was already
+        // cached — which, thanks to prefetching, is nearly always — leaving
+        // only the "opening" toast, fired just as the player takes over the
+        // screen and therefore never seen.
+        toast(getString(R.string.toast_looking_up, card.title))
+
         worker.execute { handle(card, target) }
     }
 
@@ -242,13 +281,6 @@ class CardClickAccessibilityService : AccessibilityService() {
             if (target == TargetApp.STREMIO) R.string.target_stremio else R.string.target_nuvio
         )
 
-        // Say what's happening. Without this the TV just sits there for a
-        // moment and it's impossible to tell whether anything was detected.
-        // Skipped when the answer is already cached, since there's no wait.
-        if (!MetaResolver.isCached(card)) {
-            toast(getString(R.string.toast_looking_up, card.title))
-        }
-
         val meta = MetaResolver.resolve(card)
         if (meta == null) {
             Log.i(TAG, "No confident match for \"${card.title}\"")
@@ -272,7 +304,9 @@ class CardClickAccessibilityService : AccessibilityService() {
     }
 
     private fun toast(message: String) {
-        main.post { Toast.makeText(this, message, Toast.LENGTH_SHORT).show() }
+        // LENGTH_LONG because the interesting ones land right as another app
+        // takes the screen; a short toast is gone before it's read.
+        main.post { Toast.makeText(this, message, Toast.LENGTH_LONG).show() }
     }
 
     override fun onInterrupt() = Unit

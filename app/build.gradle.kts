@@ -27,8 +27,8 @@ android {
         // hooks into is well above this; 26 lets us ship adaptive icons.
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "2.1.0"
+        versionCode = 8
+        versionName = "2.2.0"
     }
 
     signingConfigs {
