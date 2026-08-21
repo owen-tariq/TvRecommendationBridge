@@ -71,23 +71,76 @@ object TitleExtractor {
     private const val MAX_TITLE_LENGTH = 60
 
     /**
-     * Buttons and rows found on a launcher or detail screen. These are real
-     * labels that clean up into plausible-looking "titles", so they're matched
-     * as phrases rather than rejected outright — a click on one of these means
-     * "use the card that was focused", not "search for this text".
-     *
-     * The trailing `\b` matters: it keeps "Watchmen" and "Playtime" out.
+     * Button labels seen on launcher and detail screens, longest first so
+     * "watch trailer" is tested before "watch".
      */
-    private val AFFORDANCE = Regex(
-        """^(play|watch|watch now|watch trailer|play trailer|trailer|resume|continue watching|""" +
-            """buy|rent|buy or rent|subscribe|free with ads|add to watchlist|""" +
-            """remove from watchlist|watchlist|more info|more like this|info|details|""" +
-            """episodes|share|reproducir|ver|ver tr[áa]iler|comprar|alquilar|m[áa]s informaci[óo]n)\b""",
+    private val BUTTON_PHRASES = listOf(
+        "continue watching", "remove from watchlist", "add to watchlist",
+        "buy or rent", "watch trailer", "play trailer", "more like this",
+        "free with ads", "más información", "mas informacion", "ver tráiler",
+        "ver trailer", "watch now", "play now", "more info", "watchlist",
+        "episodes", "subscribe", "reproducir", "alquilar", "comprar",
+        "details", "resume", "trailer", "share", "info", "play", "watch",
+        "buy", "rent", "ver"
+    ).sortedByDescending { it.length }
+
+    /** What may follow a button word and still leave it a button: a price, "now", a badge. */
+    private val TRIVIAL_TAIL = Regex(
+        """^(\$?\d[\d.,]*|now|free|free with ads|with ads|hd|uhd|4k|sd)$""",
         RegexOption.IGNORE_CASE
     )
 
-    /** True if this looks like a button rather than the name of something to watch. */
-    fun isAffordance(value: String): Boolean = AFFORDANCE.containsMatchIn(value.trim())
+    /**
+     * True if this is a button rather than something to watch.
+     *
+     * The distinction that matters: "Watch now" is a button, but "Watch
+     * Severance" is a card whose label happens to start with the same word.
+     * So a phrase only counts as a button when nothing substantial follows it
+     * — a price or a badge doesn't count ("Buy or rent $19.99" is still a
+     * button).
+     *
+     * A trailing clause is checked too, because the launcher labels app tiles
+     * as "Plex, Watch now" — which was being read as the series "NOW".
+     */
+    fun isAffordance(value: String): Boolean {
+        val normalised = value.trim().lowercase().trim('.', '!', ' ')
+        if (normalised.isEmpty()) return false
+
+        val afterComma = normalised.substringAfterLast(',', "").trim()
+        if (afterComma.isNotEmpty() && matchesButton(afterComma)) return true
+
+        return matchesButton(normalised)
+    }
+
+    private fun matchesButton(value: String): Boolean {
+        for (phrase in BUTTON_PHRASES) {
+            if (value == phrase) return true
+            if (value.startsWith("$phrase ")) {
+                val rest = value.removePrefix(phrase).trim().trim(',', ':', '-', '–', '—').trim()
+                if (rest.isEmpty() || TRIVIAL_TAIL.matches(rest)) return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * Layout scaffolding the Google TV launcher exposes as accessibility
+     * labels: grid cells announce themselves as "Column 3", the detail screen
+     * as "Detail Page", the home screen as "Main user home screen".
+     *
+     * These are not titles, and searching for them is actively harmful — they
+     * fuzzy-match some unrelated film, get cached, and then every card in that
+     * column opens the same wrong thing.
+     */
+    private val STRUCTURAL = Regex(
+        """^((column|row|section|tab|page|item|card|grid|list|carousel|shelf)\s*\d*|""" +
+            """detail page|main user home screen|home screen|main screen|navigation( bar| drawer)?|""" +
+            """app bar|toolbar|menu bar|search bar|content area|scroll(able)? (view|area))$""",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** True if this is a layout container's label rather than any real content. */
+    fun isStructural(value: String): Boolean = STRUCTURAL.matches(value.trim())
 
     /**
      * @param candidates card strings in descending order of trustworthiness —
@@ -98,9 +151,14 @@ object TitleExtractor {
         val raw = candidates.mapNotNull { it?.toString() }.filter { it.isNotBlank() }
         if (raw.isEmpty()) return null
 
+        // Buttons and layout labels are discarded BEFORE cleaning. Doing it
+        // after was a real bug: cleaning turned "WATCH NOW" into "NOW", which
+        // is an actual series, so the affordance check never saw it.
+        val usable = raw.filterNot { isAffordance(it) || isStructural(it) }
+
         // Take the first candidate that survives cleaning, in priority order.
         // Never the longest — that's the synopsis.
-        val title = raw.firstNotNullOfOrNull { clean(it) } ?: return null
+        val title = usable.firstNotNullOfOrNull { clean(it) } ?: return null
 
         // The year can legitimately come from any of the strings, including one
         // we rejected as a title.
@@ -153,7 +211,13 @@ object TitleExtractor {
             value = value.substring(0, index).trim()
         }
 
-        value = value.replace(LEADING_VERB, "")
+        val withoutVerb = value.replace(LEADING_VERB, "")
+        // "Play Dune: Part Two" -> "Dune: Part Two" is right, but "WATCH NOW"
+        // -> "NOW" matched a real series. Only strip when what's left still
+        // looks like a title in its own right.
+        if (withoutVerb.length >= 5 || withoutVerb.contains(' ')) {
+            value = withoutVerb
+        }
         value = value.replace(TRAILING_YEAR, "")
         value = value.replace(WHITESPACE, " ").trim()
         value = value.trimEnd('.', ',', '·', '•', '-', '–', '—').trim()
@@ -163,6 +227,7 @@ object TitleExtractor {
         if (value.length > MAX_TITLE_LENGTH) return null
         if (value.lowercase() in NOT_A_TITLE) return null
         if (NOISE.matches(value)) return null
+        if (isStructural(value)) return null
         if (value.none { it.isLetter() }) return null
 
         return value

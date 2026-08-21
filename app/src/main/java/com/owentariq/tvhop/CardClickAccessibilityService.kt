@@ -118,16 +118,57 @@ class CardClickAccessibilityService : AccessibilityService() {
         worker.execute { handle(card, target) }
     }
 
-    /** Card strings in descending order of trustworthiness. */
+    /**
+     * Card strings in descending order of trustworthiness.
+     *
+     * The clicked node is usually a grid cell whose own label is layout
+     * scaffolding ("Column 1") — the title lives in its children, on the
+     * poster's content description or a caption view. So the node's subtree is
+     * walked rather than just reading the node itself.
+     */
     private fun candidatesOf(event: AccessibilityEvent): List<CharSequence?> {
         val candidates = ArrayList<CharSequence?>()
-        // The node's own label beats the event's, and contentDescription is
-        // where launchers stuff synopses — so it goes last.
-        event.source?.let { candidates.add(it.text) }
+        val source = event.source
+
+        source?.let { candidates.add(it.text) }
+        source?.let { collectSubtree(it, 0, candidates) }
         candidates.addAll(event.text)
-        event.source?.let { candidates.add(it.contentDescription) }
+        source?.let { candidates.add(it.contentDescription) }
         candidates.add(event.contentDescription)
+
+        // If the cell itself carried nothing but scaffolding, try one level up:
+        // some launchers put the label on the wrapper around the cell.
+        val anythingUsable = candidates.any { text ->
+            val value = text?.toString()?.trim()
+            !value.isNullOrEmpty() &&
+                !TitleExtractor.isStructural(value) &&
+                !TitleExtractor.isAffordance(value)
+        }
+        if (!anythingUsable) {
+            source?.parent?.let { parent ->
+                candidates.add(parent.text)
+                candidates.add(parent.contentDescription)
+                collectSubtree(parent, 1, candidates)
+            }
+        }
+
         return candidates
+    }
+
+    /** Depth- and count-limited, so a deep launcher hierarchy can't stall the UI thread. */
+    private fun collectSubtree(
+        node: android.view.accessibility.AccessibilityNodeInfo,
+        depth: Int,
+        out: MutableList<CharSequence?>
+    ) {
+        if (depth >= MAX_TREE_DEPTH || out.size >= MAX_TREE_NODES) return
+        for (index in 0 until node.childCount) {
+            val child = node.getChild(index) ?: continue
+            out.add(child.text)
+            out.add(child.contentDescription)
+            collectSubtree(child, depth + 1, out)
+            if (out.size >= MAX_TREE_NODES) return
+        }
     }
 
     private fun handle(card: CardInfo, target: TargetApp) {
@@ -169,6 +210,10 @@ class CardClickAccessibilityService : AccessibilityService() {
          * enough that the answer is ready before a deliberate press.
          */
         private const val PREFETCH_DELAY_MS = 450L
+
+        /** Bounds on the node-tree walk, so a deep hierarchy can't stall things. */
+        private const val MAX_TREE_DEPTH = 4
+        private const val MAX_TREE_NODES = 40
 
         /** How long a remembered card stays valid after focus moved to it. */
         private const val FOCUS_TTL_MS = 60_000L

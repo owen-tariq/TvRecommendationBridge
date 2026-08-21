@@ -132,4 +132,44 @@ class TitleExtractorTest {
             assertFalse("should NOT be an affordance: $title", TitleExtractor.isAffordance(title))
         }
     }
+
+    // --- Regressions from a real Google TV log, 21 Aug ---
+    // The launcher labelled its grid cells "Column 1"/"Column 5" and the home
+    // screen "Main user home screen". Those were being searched as titles,
+    // matching random films, and the cache then sent every card in a column to
+    // the same wrong movie.
+
+    @Test
+    fun `launcher layout scaffolding is never treated as a title`() {
+        for (label in listOf(
+            "Column 1", "Column 2", "Column 5", "Row 3", "Detail Page",
+            "Main user home screen", "Navigation bar", "Carousel", "Shelf 2"
+        )) {
+            assertTrue("should be structural: $label", TitleExtractor.isStructural(label))
+            assertNull("should not extract: $label", TitleExtractor.extract(listOf(label)))
+        }
+    }
+
+    /** "WATCH NOW" was being cleaned into "NOW", which is a real series. */
+    @Test
+    fun `watch now does not collapse into the series NOW`() {
+        assertNull(TitleExtractor.extract(listOf("WATCH NOW")))
+        assertNull(TitleExtractor.extract(listOf("WATCH NOW", "Plex, Watch now", "Plex, Watch now")))
+        assertNull(TitleExtractor.extract(listOf("Tubi TV, Watch now")))
+    }
+
+    /** Stripping a leading verb must still work when a real title follows. */
+    @Test
+    fun `leading verb is still stripped from a genuine title`() {
+        assertEquals("Dune: Part Two", TitleExtractor.extract(listOf("Play Dune: Part Two"))!!.title)
+        assertEquals("Severance", TitleExtractor.extract(listOf("Watch Severance"))!!.title)
+    }
+
+    /** A real title found on a child node still wins over the cell's label. */
+    @Test
+    fun `title from a child node is used when the cell label is scaffolding`() {
+        val card = TitleExtractor.extract(listOf("Column 1", "Sinners", "Sinners, movie, 2025"))!!
+        assertEquals("Sinners", card.title)
+        assertEquals(2025, card.year)
+    }
 }
