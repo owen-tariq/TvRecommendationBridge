@@ -1,6 +1,8 @@
 package com.owentariq.tvhop
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -108,5 +110,26 @@ class TitleExtractorTest {
     fun `abbreviated titles are not split at the period`() {
         val card = TitleExtractor.extract(listOf("Dr. No"))!!
         assertEquals("Dr. No", card.title)
+    }
+
+    // Detail-page buttons. Clicking these must fall back to the focused card
+    // rather than searching for the button's own label.
+
+    @Test
+    fun `detail page buttons are recognised as affordances`() {
+        for (label in listOf(
+            "Watch trailer", "Play trailer", "Buy", "Rent", "Buy or rent $19.99",
+            "Add to watchlist", "More info", "Episodes", "Free with ads",
+            "Subscribe", "Ver tráiler", "Comprar"
+        )) {
+            assertTrue("should be an affordance: $label", TitleExtractor.isAffordance(label))
+        }
+    }
+
+    @Test
+    fun `titles that merely start with a button word are not affordances`() {
+        for (title in listOf("Watchmen", "Playtime", "Renton", "Buyer's Market", "Information")) {
+            assertFalse("should NOT be an affordance: $title", TitleExtractor.isAffordance(title))
+        }
     }
 }

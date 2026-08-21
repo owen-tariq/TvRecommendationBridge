@@ -1,15 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Scoped as tightly as the framework allows: click events only, and only
-    from the TV launcher packages. The service never sees input in any other
-    app on the device.
+    Scoped as tightly as the job allows: only the TV launcher and Google TV's
+    own detail screen, and only focus/click events. The service never sees
+    input in any other app on the device.
+
+    typeViewSelected / typeViewFocused are needed because tapping a
+    recommendation card does NOT emit a click carrying the title — the
+    launcher simply navigates away. The title has to be captured while the
+    card is focused, just before the press.
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeViewClicked"
+    android:accessibilityEventTypes="typeViewClicked|typeViewSelected|typeViewFocused|typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagDefault"
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows"
     android:canRetrieveWindowContent="true"
     android:description="@string/accessibility_description"
     android:notificationTimeout="0"
-    android:packageNames="com.google.android.apps.tv.launcherx,com.google.android.tvlauncher,com.google.android.apps.tv.launcher"
+    android:packageNames="com.google.android.apps.tv.launcherx,com.google.android.tvlauncher,com.google.android.apps.tv.launcher,com.google.android.videos"
     android:settingsActivity="com.owentariq.tvhop.MainActivity" />

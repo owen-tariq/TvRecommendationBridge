@@ -71,6 +71,25 @@ object TitleExtractor {
     private const val MAX_TITLE_LENGTH = 60
 
     /**
+     * Buttons and rows found on a launcher or detail screen. These are real
+     * labels that clean up into plausible-looking "titles", so they're matched
+     * as phrases rather than rejected outright — a click on one of these means
+     * "use the card that was focused", not "search for this text".
+     *
+     * The trailing `\b` matters: it keeps "Watchmen" and "Playtime" out.
+     */
+    private val AFFORDANCE = Regex(
+        """^(play|watch|watch now|watch trailer|play trailer|trailer|resume|continue watching|""" +
+            """buy|rent|buy or rent|subscribe|free with ads|add to watchlist|""" +
+            """remove from watchlist|watchlist|more info|more like this|info|details|""" +
+            """episodes|share|reproducir|ver|ver tr[áa]iler|comprar|alquilar|m[áa]s informaci[óo]n)\b""",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** True if this looks like a button rather than the name of something to watch. */
+    fun isAffordance(value: String): Boolean = AFFORDANCE.containsMatchIn(value.trim())
+
+    /**
      * @param candidates card strings in descending order of trustworthiness —
      *   the node's own text first, the content description (which is where
      *   synopses live) last.
