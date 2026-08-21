@@ -1,40 +1,40 @@
 # TvRecommendationBridge (TvHop)
 
-Click a movie or show on your Google TV home screen and have it open in
-**Nuvio** or **Stremio** instead of wherever the launcher wanted to send you.
+Pick a movie or show on your Google TV home screen and have it open in
+**Nuvio** or **Stremio**, automatically.
 
 Free, no account, no subscription, no API key. Install it and it works.
 
-**[⬇ Download TvHop.apk](../../releases/latest/download/TvHop.apk)** — latest release, signed and ready to sideload.
+**[⬇ Download the latest APK](../../releases/latest)**
 
 ---
 
 ## What it does
 
-The TV launcher announces the title of a recommendation card when you click
-it. TvHop listens for that one event, looks the title up, and opens the
-matching page in the player app you chose.
+Tap a title on the Google TV home screen. Google TV opens its own detail page
+for it — and at that moment TvHop reads which title it is, looks it up, and
+opens the matching page in your player. No second press.
 
-That's the whole app. It does not host, store, stream or provide any
-video — it turns a card you clicked into a link and hands it to another app
-you already installed.
+That's the whole app. It doesn't host, store, stream or provide any video; it
+turns something you picked into a link and hands it to an app you already
+installed.
 
 ## Requirements
 
 - A device using the **Google TV** launcher (Chromecast with Google TV, Google
   TV Streamer, or a Google TV set from Sony / TCL / Hisense and friends). The
-  older Android TV launcher is also supported. Fire TV is not.
+  older Android TV launcher also works. Fire TV does not.
 - **Nuvio** and/or **Stremio** installed.
 
 ## Install
 
-TvHop isn't on Google Play, so it's a manual (sideloaded) install.
+Not on Google Play, so it's a manual (sideloaded) install.
 
 ### From your phone
 
 1. Install [Send Files to TV](https://play.google.com/store/apps/details?id=com.jstenpal.sendfilestotv)
-   on the TV and on your phone.
-2. Download `TvHop.apk` (link at the top of this page) on your phone.
+   on both the TV and your phone.
+2. Download `TvHop.apk` from [Releases](../../releases/latest).
 3. Send it to the TV and open it to install. Allow installs from unknown
    sources if prompted.
 
@@ -47,20 +47,23 @@ adb install TvHop.apk
 
 ## Set it up
 
-Open TvHop from the TV's app list. Three steps on one screen:
+Open TvHop from the TV's app list:
 
 1. **Pick your app** — Nuvio or Stremio.
 2. **Turn on the service** — opens Accessibility settings; enable TvHop there.
-3. **Run test** — resolves a known title and opens it in your chosen app, so
-   you can confirm everything works without hunting for a card first.
+3. **Run test** — resolves a known title and opens it, confirming network
+   access and the hand-off without hunting for a card first.
 
-### If the Accessibility toggle switches itself back off
+Then just use the home screen normally. When a title is picked you'll see
+`Found "…" — looking it up…` followed by `Opening … in Nuvio`.
 
-On Android 13+ the system blocks sideloaded apps from enabling Accessibility
-by default. Go to **Settings → Apps → TvHop**, find **Allow restricted
-setting**, enable it, then turn the service on again.
+### The Accessibility toggle switches itself back off
 
-If your device has no such option (the Google TV Streamer is one), use ADB:
+On Android 13+ the system blocks sideloaded apps from enabling Accessibility.
+Go to **Settings → Apps → TvHop**, find **Allow restricted setting**, enable
+it, then turn the service on again.
+
+If your device has no such option (the Google TV Streamer, for one):
 
 ```bash
 adb shell settings put secure enabled_accessibility_services \
@@ -68,7 +71,7 @@ adb shell settings put secure enabled_accessibility_services \
 adb shell settings put secure accessibility_enabled 1
 ```
 
-### If the service stops working after a while
+### It stops working after a while
 
 Some manufacturers kill background services aggressively. Exclude TvHop from
 any battery optimiser or "RAM cleaner", and on TCL boxes:
@@ -78,58 +81,83 @@ adb shell appops set com.owentariq.tvhop APP_AUTO_START allow
 adb shell appops set com.owentariq.tvhop APP_ASSOC_START allow
 ```
 
-### Nothing opens when you click a card
+### It opened the wrong title, or nothing happened
 
-Check the logs over ADB:
+Open TvHop and look at **"What TvHop saw"** at the bottom — the last dozen
+things the service handled, no ADB needed:
+
+```
+detail: "Snowpiercer" (2013) [movie]
+open:   "Snowpiercer" (auto, from detail page) → NUVIO
+```
+
+- `not a detail page (no play/buy/episodes actions)` — the page wasn't
+  recognised as belonging to one title.
+- `detail page, but no title among N nodes: …` — the page was recognised but
+  its title view wasn't; the line lists the view ids found.
+- `✗ "…" — best was "…" score N < 55, not opening` — nothing matched
+  confidently, so nothing was opened rather than guessing.
+
+Same detail over ADB:
 
 ```bash
 adb logcat -s TvHopService:D MetaResolver:D TargetLauncher:D
 ```
 
-- No log line at all → the click isn't being seen; the service is off or the
-  launcher isn't one of the supported ones.
-- `No match for "..."` → the title couldn't be resolved. Rare, but a card with
-  a heavily decorated label can do it.
-- Something logged but nothing opens → the target app isn't installed, or its
-  build doesn't accept the hand-off.
-
 ## How it works
 
 | Piece | Detail |
 |---|---|
-| Detection | An `AccessibilityService` scoped to the launcher packages only, listening for `TYPE_VIEW_CLICKED` and nothing else |
+| Trigger | An `AccessibilityService` scoped to the TV launcher and Google TV, watching for a detail page opening |
+| Why the detail page | Home-screen cards expose only layout scaffolding to accessibility — a card announces itself as "Column 1". The detail page has already resolved which title you picked and renders its name |
+| Finding the title | Prefers the view Google names as the title (`…:id/title`, `movie_title`, …) over guessing at positions |
 | Identification | [Cinemeta](https://v3-cinemeta.strem.io), Stremio's public metadata addon — no API key, returns IMDb ids directly |
+| Matching | Title, year and type are scored together; below a confidence floor nothing opens, because opening the wrong film is worse than opening none |
 | Stremio hand-off | `stremio:///detail/{type}/{id}`, its documented URL scheme |
-| Nuvio hand-off | Nuvio publishes no URL scheme, so TvHop starts its exported `MainActivity` with the `contentId` / `contentType` extras it already uses for its own "Continue watching" channel |
+| Nuvio hand-off | Nuvio publishes no URL scheme, so TvHop starts its exported `MainActivity` with the `contentId` / `contentType` extras its own "Continue watching" channel uses |
+| Not looping | A title is opened once; backing out of Nuvio returns you to the detail page without being thrown out again. Clicking something on the home screen re-arms it |
 
 ### Privacy
 
-The accessibility service is restricted in `accessibility_service_config.xml`
-to the launcher packages and to click events. It cannot see what you type or
-what you do in any other app. The only thing that leaves the device is the
-title of a card you clicked, sent to Cinemeta to look up. There is no
-analytics, no account and no server of ours.
+The service is restricted in `accessibility_service_config.xml` to the
+launcher and Google TV, and to focus and click events. It can't see what you
+type or do in any other app. The only thing that leaves the device is a title
+being looked up on Cinemeta. No analytics, no account, no server of ours.
 
 ## Building
-
-The Gradle wrapper jar isn't committed, so use a local Gradle 8.11+:
 
 ```bash
 gradle assembleRelease
 # app/build/outputs/apk/release/app-release.apk
 ```
 
-A GitHub Actions workflow is included to build, sign, and publish the APK. Every push to `main` refreshes the `latest` release with a signed APK.
+The Gradle wrapper jar isn't committed — use a local Gradle 8.11+.
+
+Unsigned release builds are fine locally, but CI refuses to produce one: an
+unsigned APK fails to install with `INSTALL_PARSE_FAILED_NO_CERTIFICATES`, and
+publishing one from a green build is worse than failing. CI signs using four
+repository secrets — `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
+`KEY_PASSWORD` — and refreshes the `latest` release on every push to `main`.
+
+To sign locally, create `keystore.properties` in the project root (it's
+gitignored):
+
+```properties
+storeFile=../release.jks
+storePassword=…
+keyAlias=tvhop
+keyPassword=…
+```
 
 ## Legal
 
 TvHop is an independent navigation tool. It does not host, store, distribute
-or provide movies, series, streams, torrents or any other audiovisual
-content, and has no control over what any other app on your device can play.
-What you watch in Nuvio or Stremio, and whether that is lawful where you are,
-is between you and those apps.
+or provide movies, series, streams, torrents or any other audiovisual content,
+and has no control over what any other app on your device can play. What you
+watch in Nuvio or Stremio, and whether that is lawful where you are, is
+between you and those apps.
 
-Not affiliated with, sponsored by or endorsed by Google, Nuvio or Stremio.
-All trademarks belong to their respective owners.
+Not affiliated with, sponsored by or endorsed by Google, Nuvio or Stremio. All
+trademarks belong to their respective owners.
 
 Metadata comes from Cinemeta. TvHop is not endorsed or certified by Stremio.
