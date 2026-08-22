@@ -34,15 +34,12 @@ installed.
 
 Not on Google Play, so it's a manual (sideloaded) install.
 
-### From your phone
+You will need to install and configure it via ADB.
 
-1. Install [Send Files to TV](https://play.google.com/store/apps/details?id=com.jstenpal.sendfilestotv)
-   on both the TV and your phone.
-2. Download `TvHop.apk` from [Releases](../../releases/latest).
-3. Send it to the TV and open it to install. Allow installs from unknown
-   sources if prompted.
+### Install via ADB
 
-### Via ADB
+1. Download the latest `TvHop.apk` from [Releases](../../releases/latest) to your computer.
+2. Connect to your TV and install the app:
 
 ```bash
 adb connect <tv-ip>:5555
