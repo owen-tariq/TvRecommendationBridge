@@ -30,35 +30,35 @@ installed.
   older Android TV launcher also works. Fire TV does not.
 - **Nuvio** and/or **Stremio** installed.
 
-## Install
+## ⚠️ Install with ADB — opening the APK will not work
 
-Not on Google Play, so it's a manual (sideloaded) install.
+If you install this by opening the APK on the TV (via a file manager, Send Files to TV, or a browser download), Android 13+ puts the app under **restricted settings** and permanently blocks the Accessibility toggle. It will flip itself back off with no explanation, and the app won't be able to do anything. Apps installed over ADB bypass this restriction.
 
-You will need to install and configure it via ADB.
+**1. Enable ADB on the TV**
+Go to **Settings → System → About** and click "Android TV OS build" 7 times to enable Developer Options. Then, go to **Settings → System → Developer options → Network debugging** (or USB debugging). The IP address will be shown on that screen.
 
-### Install via ADB
-
-1. Download the latest `TvHop.apk` from [Releases](../../releases/latest) to your computer.
-2. Connect to your TV and install the app:
-
+**2. Install**
+Download the latest `TvHop.apk` from [Releases](../../releases/latest), then open a terminal on your computer:
 ```bash
-adb connect <tv-ip>:5555
+adb connect <tv-ip>:5555 
 adb install TvHop.apk
 ```
 
-## Set it up
+*Note: Some devices need pairing first. The pairing port and 6-digit code can be found on the Network debugging screen:*
+```bash
+adb pair <tv-ip>:<pair-port> 
+adb connect <tv-ip>:<connect-port>
+```
 
-Open TvHop from the TV's app list:
+**Already installed it the normal way?** 
+No reinstall needed — you can grant the service permission directly using ADB:
+```bash
+adb shell settings put secure enabled_accessibility_services com.owentariq.tvhop/com.owentariq.tvhop.CardClickAccessibilityService 
+adb shell settings put secure accessibility_enabled 1
+```
 
-1. **Pick your app** — Nuvio or Stremio.
-2. **Turn on the service** — On modern Android TV versions, the system blocks sideloaded apps from enabling Accessibility through the settings menu. **You must use ADB to enable the service:**
-
-   ```bash
-   adb shell settings put secure enabled_accessibility_services com.owentariq.tvhop/com.owentariq.tvhop.CardClickAccessibilityService
-   adb shell settings put secure accessibility_enabled 1
-   ```
-
-   *(If you try to turn it on with your remote in the settings and it immediately turns itself back off, use the ADB command above. It's the only way.)*
+**No computer?** 
+An on-device ADB client (e.g. Remote ADB Shell) pointed at `127.0.0.1:5555` works too.
 
 3. **Run test** — resolves a known title and opens it, confirming network
    access and the hand-off without hunting for a card first.
