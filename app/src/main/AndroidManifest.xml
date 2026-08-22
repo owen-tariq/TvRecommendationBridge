@@ -18,6 +18,16 @@
     -->
     <queries>
         <package android:name="com.nuvio.tv" />
+        <!-- To read installed app names, so an app tile is never mistaken
+             for a film. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="stremio" />

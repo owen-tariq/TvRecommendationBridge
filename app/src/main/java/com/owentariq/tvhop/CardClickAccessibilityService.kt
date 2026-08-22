@@ -155,6 +155,13 @@ class CardClickAccessibilityService : AccessibilityService() {
             SystemClock.elapsedRealtime() - lastHandledAt < DEBOUNCE_MS
         ) return
 
+        // "Netflix" is an app you opened, not a film to look up.
+        if (InstalledApps.isAppName(this, card.title)) {
+            Log.d(TAG, "\"${card.title}\" is an installed app, not a title — ignoring")
+            DebugLog.add("skip:   \"${card.title}\" is an app name, not a title")
+            return
+        }
+
         // Back out of Nuvio and you land on this same page again. Don't
         // bounce the user straight back out of it.
         if (card.title == alreadyOpenedTitle) {
@@ -186,6 +193,17 @@ class CardClickAccessibilityService : AccessibilityService() {
     }
 
     private fun handleClick(event: AccessibilityEvent, packageName: String) {
+        // Clicks on the launcher are never acted on. Selecting a title there
+        // is handled by the detail page that follows, and everything else you
+        // can click — app tiles, tabs, rows — is not a title at all. Acting on
+        // them meant pressing an app on the Apps screen launched Nuvio over
+        // the top of it, because the app's name was searched as if it were a
+        // film.
+        //
+        // Only the detail page's own buttons ("Watch trailer", "Buy") are
+        // still worth reacting to, and those live in Google TV.
+        if (packageName != GOOGLE_TV_PACKAGE) return
+
         val candidates = candidatesOf(event)
         Log.d(TAG, "Click strings: " + candidates.filterNotNull().joinToString(" ⟪|⟫ "))
 
