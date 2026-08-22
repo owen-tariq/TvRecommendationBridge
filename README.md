@@ -54,26 +54,20 @@ adb install TvHop.apk
 Open TvHop from the TV's app list:
 
 1. **Pick your app** — Nuvio or Stremio.
-2. **Turn on the service** — opens Accessibility settings; enable TvHop there.
+2. **Turn on the service** — On modern Android TV versions, the system blocks sideloaded apps from enabling Accessibility through the settings menu. **You must use ADB to enable the service:**
+
+   ```bash
+   adb shell settings put secure enabled_accessibility_services com.owentariq.tvhop/com.owentariq.tvhop.CardClickAccessibilityService
+   adb shell settings put secure accessibility_enabled 1
+   ```
+
+   *(If you try to turn it on with your remote in the settings and it immediately turns itself back off, use the ADB command above. It's the only way.)*
+
 3. **Run test** — resolves a known title and opens it, confirming network
    access and the hand-off without hunting for a card first.
 
 Then just use the home screen normally. When a title is picked you'll see
 `Found "…" — looking it up…` followed by `Opening … in Nuvio`.
-
-### The Accessibility toggle switches itself back off
-
-On Android 13+ the system blocks sideloaded apps from enabling Accessibility.
-Go to **Settings → Apps → TvHop**, find **Allow restricted setting**, enable
-it, then turn the service on again.
-
-If your device has no such option (the Google TV Streamer, for one):
-
-```bash
-adb shell settings put secure enabled_accessibility_services \
-  com.owentariq.tvhop/com.owentariq.tvhop.CardClickAccessibilityService
-adb shell settings put secure accessibility_enabled 1
-```
 
 ### It stops working after a while
 
