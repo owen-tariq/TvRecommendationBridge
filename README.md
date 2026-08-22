@@ -1,5 +1,9 @@
 # TvRecommendationBridge (TvHop)
 
+[![Stars](https://img.shields.io/github/stars/owen-tariq/TvRecommendationBridge?style=flat-square&label=stars&color=4c8dff)](../../stargazers)
+[![Downloads](https://img.shields.io/github/downloads/owen-tariq/TvRecommendationBridge/total?style=flat-square&label=downloads&color=7fe7c4)](../../releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/owen-tariq/TvRecommendationBridge/build.yml?style=flat-square&label=build)](../../actions)
+
 Pick a movie or show on your Google TV home screen and have it open in
 **Nuvio** or **Stremio**, automatically.
 
